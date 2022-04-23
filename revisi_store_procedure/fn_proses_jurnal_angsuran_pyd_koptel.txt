@@ -1,0 +1,291 @@
+-- name        : fn_proses_jurnal_angsuran_pyd_koptel(character,character,character)
+
+-- created by  : mhd - 20140805
+
+-- description : berfungsi untuk melakukan jurnal angsuran pembiayaan
+
+-- example     : select fn_proses_jurnal_angsuran_pyd_koptel('929925a1cd034de58aae2207138cf015','1010003','noreferensi');
+
+DECLARE
+
+	v_angsuran_id ALIAS FOR $1;
+
+	v_account_cash ALIAS FOR $2;
+
+	v_no_referensi ALIAS FOR $3;
+
+	v_db_cr_kas VARCHAR;
+
+	v_trx_id VARCHAR;
+
+	v_id_trx VARCHAR;
+
+	v_desc  VARCHAR;
+
+	v_gl_saldotab VARCHAR;
+
+	v_gl_tolakan VARCHAR;
+
+	v_branch_id VARCHAR;	 
+
+	v_amount NUMERIC;
+
+	v_i INTEGER;
+
+	mviews RECORD;
+
+	mviews1 RECORD;
+
+	v_amount_unsettle NUMERIC;
+
+	v_gl_titipan VARCHAR;
+
+	v_branch_code VARCHAR;
+
+	v_created_by VARCHAR;
+
+	v_trx_date DATE;
+
+	v_account_saving_no VARCHAR; --tabmahan ade 19-05-2016
+
+	v_trx_detail_id VARCHAR; --tabmahan ade 19-05-2016
+
+BEGIN
+
+	v_i = 0;
+
+	--JURNAL TRX ANGSURAN PYD
+
+	DELETE FROM mfi_trx_gl_detail WHERE trx_gl_id in(select trx_gl_id from mfi_trx_gl where jurnal_trx_id=v_angsuran_id);
+
+	DELETE FROM mfi_trx_gl WHERE jurnal_trx_id=v_angsuran_id;
+
+	SELECT INTO v_gl_titipan code_value FROM mfi_list_code_detail WHERE code_group='gl_titipan_lainnya';
+
+	-- JOURNAL SECTION OF SETTLEMENT PAY DATA
+
+	FOR mviews IN 	 
+
+		SELECT a.angsuran_id trx_id, '00000' branch_code, c.product_code, c.product_name, d.product_financing_gl_code, d.gl_saldo_pokok, 
+
+		d.gl_saldo_margin, d.gl_pendapatan_margin, c.flag_pdd, a.created_date, a.created_by, sum(a.pokok) as pokok, sum(a.margin) as margin,
+
+		a.trx_date voucher_date, a.trx_date trx_date, '2c078d4f884446d8af5ed2b5d7633c5c' branch_id, a.account_financing_no account_financing_no
+
+		FROM mfi_angsuran_temp_detail a, mfi_account_financing b, mfi_product_financing c, mfi_product_financing_gl d
+
+		WHERE a.account_financing_no=b.account_financing_no AND b.product_code=c.product_code AND c.product_financing_gl_code=d.product_financing_gl_code
+
+		AND a.angsuran_id=v_angsuran_id 
+
+		and a.hasil_proses>=(a.pokok+a.margin)
+
+		GROUP BY 1,3,4,5,6,7,8,9,10,11,14,15,16,17
+
+		LOOP
+
+		-- Now "mviews" has one record from transaksi droping pembiayaan=
+
+		v_branch_code = mviews.branch_code;
+
+		v_created_by = mviews.created_by;
+
+		v_trx_date = mviews.trx_date;
+
+		SELECT INTO v_id_trx uuid(); 
+
+		SELECT INTO v_trx_id trx_gl_id FROM mfi_trx_gl WHERE jurnal_trx_id=mviews.trx_id;		
+
+		v_branch_id = mviews.branch_id;
+
+		SELECT INTO v_gl_tolakan gl_tolakan FROM mfi_product_cm_gl LIMIT 1;
+
+		v_desc = 'TRX PENDEBETAN ANGSURAN ('||mviews.product_name||')';
+
+		INSERT INTO mfi_trx_gl(trx_gl_id,trx_date,voucher_no,voucher_date,voucher_ref,branch_code,jurnal_trx_type,jurnal_trx_id,created_by,created_date,description)
+
+		VALUES(v_id_trx,mviews.trx_date,'',mviews.voucher_date,v_no_referensi,mviews.branch_code,3,mviews.trx_id,mviews.created_by,mviews.trx_date,v_desc);					
+
+		v_amount = mviews.pokok+mviews.margin;
+
+		IF v_amount>0 THEN		
+
+			v_gl_saldotab=fn_cek_glaccount(v_gl_saldotab);
+
+			v_desc = 'TRX PENDEBETAN ANGSURAN ('||mviews.product_name||')';
+
+			INSERT INTO mfi_trx_gl_detail(trx_gl_id,account_code,flag_debit_credit,amount,description,trx_sequence)
+
+			VALUES(v_id_trx,v_account_cash,'D',v_amount,v_desc,v_i);		
+
+			v_i = v_i + 1;
+
+			---insert tabel histori tab + update saldo tab						    
+
+			--INSERT INTO mfi_trx_account_saving(branch_id, account_saving_no, trx_saving_type,flag_debit_credit, trx_date, amount, reference_no, 
+
+			--			description, created_date, created_by, trx_sequence, trx_detail_id, verify_by, verify_date, trx_status, flag_pencairan)
+
+			--VALUES (v_branch_id, mviews.account_saving_no, 3, 'D', mviews.trx_date, mviews.uang_muka, mviews.account_financing_no, v_desc, 
+
+			--		CURRENT_DATE, 'SYSTEM', v_i , v_id_trx, 'SYSTEM', mviews.trx_date, 1, 0);
+
+			--UPDATE mfi_account_saving SET saldo_memo=saldo_memo-mviews.uang_muka,saldo_riil=saldo_riil+mviews.uang_muka
+
+			--	WHERE account_saving_no=mviews.account_saving_no;		
+
+		END IF;				
+
+		v_amount = mviews.pokok;
+
+		IF mviews.flag_pdd=1 THEN
+
+		   v_amount = v_amount + mviews.margin; 
+
+		END IF;
+
+		IF v_amount>0 THEN 			
+
+			v_desc = 'TRX PENDEBETAN ANGSURAN#PIUTANG ('||mviews.product_name||')';	
+
+			INSERT INTO mfi_trx_gl_detail(trx_gl_id,account_code,flag_debit_credit,amount,description,trx_sequence)
+
+			VALUES(v_id_trx,mviews.gl_saldo_pokok,'C',v_amount,v_desc,v_i);				   
+
+			v_i = v_i + 1;
+
+		END IF;
+
+		IF (mviews.flag_pdd=1) AND (mviews.margin>0) THEN 
+
+			v_desc = 'TRX PENDEBETAN ANGSURAN#MARGIN DITANGGUHKAN ('||mviews.product_name||')';		
+
+			INSERT INTO mfi_trx_gl_detail(trx_gl_id,account_code,flag_debit_credit,amount,description,trx_sequence)
+
+			VALUES(v_id_trx,mviews.gl_saldo_margin,'D',mviews.margin,v_desc,v_i);				   			
+
+			v_i = v_i + 1;
+
+		END IF;
+
+		IF mviews.margin>0  THEN 			
+
+			v_desc = 'TRX PENDEBETAN ANGSURAN#MARGIN ('||mviews.product_name||')';		
+
+			INSERT INTO mfi_trx_gl_detail(trx_gl_id,account_code,flag_debit_credit,amount,description,trx_sequence)
+
+			VALUES(v_id_trx,mviews.gl_pendapatan_margin,'C',mviews.margin,v_desc,v_i);				   
+
+			v_i = v_i + 1;
+
+		END IF;
+
+	END LOOP;
+
+	-- JOURNAL SECTION OF UN-SETTLEMENT PAY DATA
+
+	SELECT 
+
+		INTO v_amount_unsettle 
+
+		coalesce(sum(jumlah_bayar-jumlah_settle),0)
+
+	FROM mfi_angsuran_bayar
+
+	WHERE angsuran_id=v_angsuran_id;
+
+	IF v_amount_unsettle>0  THEN 			
+
+		v_id_trx = uuid();
+
+		v_desc = 'TRX PENDEBETAN ANGSURAN#TITIPAN';
+
+		INSERT INTO mfi_trx_gl(trx_gl_id,trx_date,voucher_no,voucher_date,voucher_ref,branch_code,jurnal_trx_type,jurnal_trx_id,created_by,created_date,description)
+
+		VALUES(v_id_trx,v_trx_date,'',v_trx_date,v_no_referensi,v_branch_code,3,v_angsuran_id,v_created_by,now(),v_desc);
+
+		v_desc = 'TRX PENDEBETAN ANGSURAN#TITIPAN LAINNYA';		
+
+		INSERT INTO mfi_trx_gl_detail(trx_gl_id,account_code,flag_debit_credit,amount,description,trx_sequence)
+
+		VALUES(v_id_trx,v_gl_titipan,'C',v_amount_unsettle,v_desc,v_i);
+
+		v_i = v_i + 1; 			
+
+		v_desc = 'TRX PENDEBETAN ANGSURAN#KAS';		
+
+		INSERT INTO mfi_trx_gl_detail(trx_gl_id,account_code,flag_debit_credit,amount,description,trx_sequence)
+
+		VALUES(v_id_trx,v_account_cash,'D',v_amount_unsettle,v_desc,v_i);
+
+		v_i = v_i + 1;
+
+	END IF;
+
+	-- UPDATE UN-SETTLEMENT TO SAVING
+
+	FOR mviews1 IN
+
+		SELECT 
+
+			nik,coalesce(jumlah_bayar-jumlah_settle ,0) as saldo
+
+		FROM mfi_angsuran_bayar
+
+		WHERE angsuran_id=v_angsuran_id
+
+		AND coalesce(jumlah_bayar-jumlah_settle ,0)>0
+
+	LOOP
+
+		v_desc = 'TRX PENDEBETAN ANGSURAN#TITIPAN';
+
+		SELECT INTO v_trx_detail_id uuid(); 
+
+		SELECT INTO v_account_saving_no account_saving_no FROM mfi_account_saving 
+
+		WHERE cif_no=mviews1.nik AND product_code='09';
+
+		UPDATE mfi_account_saving SET saldo_riil=saldo_riil+mviews1.saldo, saldo_memo=saldo_memo+mviews1.saldo
+
+		WHERE account_saving_no=v_account_saving_no;
+
+		INSERT INTO mfi_trx_account_saving(
+
+		branch_id, account_saving_no, trx_saving_type,flag_debit_credit, trx_date,
+
+		amount, reference_no, description, created_date, created_by,
+
+		trx_sequence, trx_detail_id, verify_by, verify_date, trx_status, flag_pencairan)
+
+		VALUES (v_branch_id, v_account_saving_no, 3, 'C', v_trx_date,
+
+		mviews1.saldo, v_account_saving_no, v_desc, CURRENT_DATE, 'SYSTEM', 
+
+		1, v_trx_detail_id, 'SYSTEM', v_trx_date, 1, 0);
+
+		INSERT INTO mfi_trx_detail (
+
+		trx_detail_id, trx_type, trx_account_type, account_no, flag_debit_credit
+
+		,amount, trx_date, description, created_by, created_date, trx_sequence
+
+		, account_type_dest
+
+		)
+
+		VALUES (
+
+		v_trx_detail_id, 1, 1, v_account_saving_no, 'C'
+
+		, mviews1.saldo, v_trx_date, v_desc, 'SYSTEM', CURRENT_DATE, 1
+
+		, 0
+
+		);
+
+	END LOOP;
+
+	RETURN  1;
+
+END

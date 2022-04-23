@@ -1,0 +1,31 @@
+TRUNCATE ONLY mfi_account_financing_reg;
+TRUNCATE ONLY mfi_account_financing_reg_lunas;
+TRUNCATE ONLY mfi_account_financing_schedulle;
+TRUNCATE ONLY mfi_account_financing_droping;
+TRUNCATE ONLY mfi_account_financing;
+TRUNCATE ONLY mfi_account_financing_lunas;
+TRUNCATE ONLY mfi_angsuran_temp_tab;
+
+TRUNCATE ONLY mfi_trx_detail;
+TRUNCATE ONLY mfi_trx_account_financing;
+TRUNCATE ONLY mfi_trx_account_deposit;
+TRUNCATE ONLY mfi_trx_account_financing_reject;
+TRUNCATE ONLY mfi_trx_account_insurance;
+TRUNCATE ONLY mfi_trx_account_saving;
+TRUNCATE ONLY mfi_angsuran_bayar;
+TRUNCATE ONLY mfi_angsuran_temp;
+TRUNCATE ONLY mfi_angsuran_temp_detail;
+TRUNCATE ONLY mfi_angsuran_temp_detail_unins;
+TRUNCATE ONLY mfi_closing_financing_data;
+TRUNCATE ONLY mfi_closing_saving_data;
+TRUNCATE ONLY mfi_closing_ledger_data;
+TRUNCATE ONLY mfi_log_trx_pendebetan;
+TRUNCATE ONLY mfi_log_upload_pegawai;
+TRUNCATE ONLY mfi_pegawai_temp;
+TRUNCATE ONLY mfi_spb;
+TRUNCATE ONLY mfi_spb_detail;
+TRUNCATE ONLY mfi_temp_twp;
+
+TRUNCATE TABLE mfi_trx_gl CASCADE;
+TRUNCATE ONLY mfi_trx_gl_detail;
+TRUNCATE ONLY mfi_trx_gl_type;

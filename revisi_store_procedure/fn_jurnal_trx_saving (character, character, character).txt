@@ -1,0 +1,276 @@
+
+
+-- name        : fn_jurnal_trx_saving(id_trx, user_proses)
+
+
+-- created by  : mhd - 20140310
+
+
+-- description : berfungsi untuk melakukan jurnal dari transaksi tabungan
+
+
+-- example     : select fn_jurnal_trx_saving('01010019210929', 'Admin');
+
+
+DECLARE
+
+
+	v_trx_id ALIAS FOR $1;
+
+
+	v_created_by ALIAS FOR $2;
+
+
+	v_account_cash_code ALIAS FOR $3;
+
+
+	v_flag_debet_credit_cash VARCHAR;
+
+
+	v_desc  VARCHAR;
+
+
+	v_amount NUMERIC;
+
+
+	v_tipe_voucher INTEGER;
+
+
+	v_tahun INTEGER;
+
+
+	v_bulan INTEGER;
+
+
+	v_jurnal_trx_type INTEGER;
+
+
+	v_id VARCHAR;
+
+
+	v_count INTEGER;
+
+
+	v_datetime VARCHAR;
+
+
+	mviews RECORD;
+
+
+BEGIN
+
+
+	--JURNAL TRX SAVING
+
+
+	FOR mviews IN 
+
+
+	    SELECT a.trx_account_saving_id,a.account_saving_no,a.reference_no,a.description,a.branch_id,v_account_cash_code as account_cash_code,f.branch_code,
+
+
+		       a.trx_saving_type,a.flag_debit_credit,a.trx_date,a.amount,a.created_by,d.gl_saldo,d.gl_biaya,d.gl_adm,a.description
+
+
+		 FROM mfi_trx_account_saving a
+
+
+		 LEFT JOIN mfi_account_saving b ON (a.account_saving_no=b.account_saving_no)
+
+
+		 LEFT JOIN mfi_product_saving c ON (b.product_code=c.product_code)
+
+
+		 LEFT JOIN mfi_product_saving_gl d ON (c.product_saving_gl_code=d.product_saving_gl_code)
+
+
+		 LEFT JOIN mfi_gl_account_cash e ON (e.user_id=cast(a.created_by as integer))
+
+
+		 LEFT JOIN mfi_branch f ON (a.branch_id=f.branch_id)
+
+
+		 WHERE a.created_by<>'SYS'
+
+
+		 AND a.trx_account_saving_id= v_trx_id
+
+
+		 LOOP
+
+
+	    -- Now "mviews" has one record from cs_materialized_views
+
+
+		DELETE FROM mfi_trx_jurnal_account_detail WHERE trx_jurnal_account_id=mviews.trx_account_saving_id;
+
+
+		DELETE FROM mfi_trx_jurnal_account WHERE trx_account_id=mviews.trx_account_saving_id;
+
+
+		DELETE FROM mfi_trx_gl_detail WHERE trx_gl_id=mviews.trx_account_saving_id;
+
+
+		DELETE FROM mfi_trx_gl WHERE trx_gl_id=mviews.trx_account_saving_id;
+
+
+		IF mviews.flag_debit_credit='C' THEN
+
+
+		   v_flag_debet_credit_cash='D';
+
+
+		ELSE    
+
+
+		   v_flag_debet_credit_cash='C';
+
+
+		END IF;
+
+
+RAISE NOTICE ':: flag_debit_credit = % ',mviews.flag_debit_credit;
+
+
+RAISE NOTICE ':: v_flag_debet_credit_cash = % ',v_flag_debet_credit_cash;
+
+
+		v_tipe_voucher = 0;
+
+
+		v_desc = '';
+
+
+		IF mviews.trx_saving_type=1 THEN
+
+
+		   v_desc = 'SETORAN TUNAI';
+
+
+		   v_tipe_voucher = 1;
+
+
+		ELSEIF mviews.trx_saving_type=2 THEN
+
+
+		   v_desc = 'PENARIKAN TUNAI';
+
+
+		   v_tipe_voucher = 2;
+
+
+		ELSEIF mviews.trx_saving_type=3 THEN
+
+
+		   v_desc = 'PINBUK KELUAR';
+
+
+		ELSEIF mviews.trx_saving_type=4 THEN
+
+
+		   v_desc = 'PINBUK MASUK';
+
+
+		END IF;
+
+
+		SELECT INTO v_datetime to_char(current_timestamp, 'YYYY-MM-DD HH24:MI');
+
+
+		v_count = 0;
+
+
+		/*
+
+
+		INSERT INTO mfi_trx_jurnal_account(trx_jurnal_account_id,account_type,trx_account_id,trx_date)
+
+
+		VALUES(mviews.trx_account_saving_id,1,mviews.trx_account_saving_id,mviews.trx_date);
+
+
+		v_count = v_count + 1;
+
+
+		-- jurnal account produk tabungan
+
+
+		INSERT INTO mfi_trx_jurnal_account_detail(trx_jurnal_account_detail_id,trx_jurnal_account_id,account_code,amount,flag_debet_credit,description)
+
+
+		VALUES(uuid(),mviews.trx_account_saving_id,mviews.gl_saldo,mviews.amount,mviews.flag_debit_credit,v_desc);
+
+
+		-- jurnal kas teller
+
+
+		IF mviews.trx_saving_type=1 OR mviews.trx_saving_type=2 THEN
+
+
+		    v_count = v_count + 1;
+
+
+			INSERT INTO mfi_trx_jurnal_account_detail(trx_jurnal_account_detail_id,trx_jurnal_account_id,account_code,amount,flag_debet_credit,description)
+
+
+			VALUES(uuid(),mviews.trx_account_saving_id,mviews.account_cash_code,mviews.amount,v_flag_debet_credit_cash,v_desc);
+
+
+		END IF;
+
+
+		*/
+
+
+		-- Table: mfi_trx_gl
+
+
+		v_count = v_count + 1;
+
+
+		v_jurnal_trx_type = 1;
+
+
+		INSERT INTO mfi_trx_gl (trx_gl_id,trx_date,voucher_date,voucher_ref,branch_code,jurnal_trx_type,jurnal_trx_id,created_by,created_date,description)
+
+
+		VALUES(mviews.trx_account_saving_id,mviews.trx_date,mviews.trx_date,mviews.reference_no,mviews.branch_code,v_jurnal_trx_type,mviews.trx_account_saving_id,v_created_by,now(),mviews.description);
+
+
+		v_count = v_count + 1;	
+
+
+		SELECT into v_id UUID();
+
+
+		INSERT INTO mfi_trx_gl_detail(trx_gl_detail_id,trx_gl_id,account_code,flag_debit_credit,amount,description)
+
+
+		VALUES(v_id,mviews.trx_account_saving_id,mviews.gl_saldo,mviews.flag_debit_credit,mviews.amount,v_desc||' Rek.'||mviews.account_saving_no);
+
+
+		IF mviews.trx_saving_type=1 OR mviews.trx_saving_type=2 THEN
+
+
+		    v_count = v_count + 1;
+
+
+		    SELECT into v_id UUID();
+
+
+			INSERT INTO mfi_trx_gl_detail(trx_gl_detail_id,trx_gl_id,account_code,flag_debit_credit,amount,description)
+
+
+			VALUES(v_id,mviews.trx_account_saving_id,mviews.account_cash_code,v_flag_debet_credit_cash,mviews.amount,v_desc||' REK.'||mviews.account_saving_no);			
+
+
+		END IF;		
+
+
+    END LOOP;
+
+
+    RETURN  v_count;
+
+
+END
